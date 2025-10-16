@@ -1,0 +1,280 @@
+// prisma/schema.prisma
+
+// Konfigurasi generator untuk Prisma Client
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Konfigurasi sumber data menggunakan PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Model User: Menyimpan data pengguna aplikasi (admin/staff)
+model User {
+  id                         Int             @id @default(autoincrement()) // ID unik pengguna (auto-increment)
+  nama                       String // Nama pengguna
+  email                      String?         @unique // Email pengguna (harus unik)
+  password                   String // Password terenkripsi
+  isVerified                 Boolean         @default(false) // Status verifikasi akun
+  isResetPasswordVerified    Boolean // Status verifikasi reset password
+  verificationOtp            String? // Kode OTP untuk verifikasi akun (opsional)
+  verificationOtpCreatedAt   DateTime? // Waktu pembuatan OTP verifikasi (opsional)
+  resetPasswordOtp           String? // Kode OTP untuk reset password (opsional)
+  resetOtpCreatedAt          DateTime? // Waktu pembuatan OTP reset password (opsional)
+  transactions               Transaction[] // Relasi ke transaksi yang diproses pengguna
+  createdAt                  DateTime        @default(now()) // Waktu pembuatan data
+  updatedAt                  DateTime        @updatedAt // Waktu terakhir update data
+  auditLogs                  AuditLog[] // Tambahkan ini
+  notificationLogs           NotificationLog[] // Relasi ke log notifikasi
+
+  // Fungsi: Pengelolaan user admin/staff yang dapat melakukan transaksi
+}
+
+// Model ProductType: Menyimpan tipe produk (sepatu, baju, topi, dll)
+model ProductType {
+  id        String     @id @default(uuid()) // ID unik tipe produk (UUID)
+  name      String     @unique // Nama tipe produk (harus unik)
+  category  Category[]
+  products  Product[] // Relasi ke produk-produk dengan tipe ini
+  sizes     Size[] // Relasi ke ukuran yang tersedia untuk tipe ini
+  createdAt DateTime   @default(now()) // Waktu pembuatan data
+  updatedAt DateTime   @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Mengelompokkan produk berdasarkan jenis (sepatu, baju, topi)
+  // dan menentukan ukuran yang valid untuk setiap tipe produk
+
+  @@index([name]) // Index untuk mempercepat pencarian berdasarkan nama
+}
+
+// Model Category: Menyimpan kategori produk (casual, formal, sport, dll)
+model Category {
+  id            Int       @id @default(autoincrement()) // ID unik kategori (auto-increment)
+  nama          String    @unique // Nama kategori (harus unik)
+  deskripsi     String? // Deskripsi kategori (opsional)
+  productTypeId String // FK ke ProductType
+  productType   ProductType @relation(fields: [productTypeId], references: [id])
+  products      Product[] // Relasi ke produk-produk dalam kategori ini
+  createdAt     DateTime  @default(now()) // Waktu pembuatan data
+  updatedAt     DateTime  @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Mengelompokkan produk berdasarkan kategori penggunaan
+  // (sport, casual, formal, dll)
+
+  @@index([nama]) // Index untuk mempercepat pencarian berdasarkan nama
+}
+
+// Model Brand: Menyimpan merek produk (Nike, Adidas, dll)
+model Brand {
+  id        Int       @id @default(autoincrement()) // ID unik merek (auto-increment)
+  nama      String    @unique // Nama merek (harus unik)
+  image     String? // URL gambar logo merek (opsional)
+  deskripsi String? // Deskripsi merek (opsional)
+  products  Product[] // Relasi ke produk-produk dengan merek ini
+  createdAt DateTime  @default(now()) // Waktu pembuatan data
+  updatedAt DateTime  @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Mengelompokkan produk berdasarkan merek/brand
+
+  @@index([nama]) // Index untuk mempercepat pencarian berdasarkan nama
+}
+
+// Model Product: Menyimpan data produk
+model Product {
+  id               String            @id @default(uuid()) // ID unik produk (UUID)
+  nama             String // Nama produk
+  deskripsi        String? // Deskripsi produk (opsional)
+  hargaBeli        Float // Harga beli produk (modal)
+  hargaJual        Float // Harga jual produk
+  categoryId       Int // ID kategori produk (foreign key)
+  brandId          Int // ID merek produk (foreign key)
+  stock            Int               @default(0) // Jumlah total stok produk
+  minStock         Int               @default(0) // Batas minimum stok untuk peringatan
+  image            String // URL gambar produk
+  category         Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade) // Relasi ke kategori
+  brand            Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade) // Relasi ke merek
+  productTypeId    String // ID tipe produk (foreign key)
+  productType      ProductType       @relation(fields: [productTypeId], references: [id]) // Relasi ke tipe produk
+  sizes            ProductSize[] // Relasi ke ukuran-ukuran produk
+  transactions     TransactionItem[] // Relasi ke transaksi item
+  kondisi          KondisiProduk     @default(BARU) // Kondisi produk (BARU, BEKAS, REKONDISI)
+  stockBatchId     String? // FK ke StockBatch (opsional)
+  stockBatch       StockBatch?       @relation(fields: [stockBatchId], references: [id])
+  notificationLogs NotificationLog[] // Relasi ke log notifikasi
+  createdAt        DateTime          @default(now()) // Waktu pembuatan data
+  updatedAt        DateTime          @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menyimpan informasi lengkap tentang produk yang dijual
+  // termasuk kategori, merek, tipe, harga, dan stok
+
+  @@index([categoryId, productTypeId, brandId]) // Index gabungan
+  @@index([nama]) // Index untuk mempercepat pencarian berdasarkan nama
+}
+
+// Enum KondisiProduk: Mendefinisikan kondisi produk
+enum KondisiProduk {
+  BARU // Produk baru/original
+  BEKAS // Produk bekas pakai
+  REKONDISI // Produk yang telah diperbaiki/refurbished
+}
+
+// Model Size: Menyimpan ukuran produk
+model Size {
+  id            String          @id @default(uuid()) // ID unik ukuran (UUID)
+  label         String // Label ukuran (S, M, L, 40, 41, dll)
+  productTypeId String // ID tipe produk (foreign key)
+  productType   ProductType     @relation(fields: [productTypeId], references: [id]) // Relasi ke tipe produk
+  products      ProductSize[] // Relasi ke produk dengan ukuran ini
+  transactions  TransactionItem[] // Relasi ke transaksi item
+  createdAt     DateTime        @default(now()) // Waktu pembuatan data
+  updatedAt     DateTime        @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menyimpan ukuran yang tersedia sesuai tipe produk
+  // (misal: 38-45 untuk sepatu, S/M/L untuk baju)
+
+  @@unique([label, productTypeId]) // Kombinasi label dan tipe produk harus unik
+  @@index([productTypeId]) // Index untuk mempercepat pencarian berdasarkan tipe produk
+}
+
+// Model ProductSize: Menyimpan hubungan produk dan ukuran beserta stoknya
+model ProductSize {
+  id        String   @id @default(uuid()) // ID unik (UUID)
+  productId String // ID produk (foreign key)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade) // Relasi ke produk
+  sizeId    String // ID ukuran (foreign key)
+  size      Size     @relation(fields: [sizeId], references: [id], onDelete: Cascade) // Relasi ke ukuran
+  quantity  Int      @default(0) // Jumlah stok produk dengan ukuran tersebut
+  createdAt DateTime @default(now()) // Waktu pembuatan data
+  updatedAt DateTime @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menghubungkan produk dengan ukuran yang tersedia
+  // dan menyimpan stok untuk setiap kombinasi produk-ukuran
+
+  @@unique([productId, sizeId]) // Kombinasi produk dan ukuran harus unik
+  @@index([productId, sizeId]) // Index gabungan
+}
+
+// Model StockBatch: Menyimpan informasi batch stok produk
+model StockBatch {
+  id           String    @id @default(uuid()) // ID unik batch (UUID)
+  nama         String // Nama batch (misal: "Karung April 2025")
+  totalHarga   Float // Total harga karung batch (misal: 10_000_000)
+  jumlahSepatu Int // Jumlah sepatu dalam batch
+  products     Product[] // Relasi ke produk-produk yang berasal dari batch ini
+  createdAt    DateTime  @default(now()) // Waktu pembuatan data
+  updatedAt    DateTime  @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Mengelompokkan produk yang berasal dari satu batch stok
+}
+
+// Enum PaymentMethod: Mendefinisikan metode pembayaran
+enum PaymentMethod {
+  CASH // Pembayaran tunai
+  CREDIT_CARD // Pembayaran dengan kartu kredit
+  DEBIT_CARD // Pembayaran dengan kartu debit
+  TRANSFER // Pembayaran dengan transfer bank
+  DIGITAL_WALLET // Pembayaran dengan dompet digital
+}
+
+// Model Customer: Menyimpan data pelanggan
+model Customer {
+  id           String        @id @default(uuid()) // ID unik pelanggan (UUID)
+  nama         String // Nama pelanggan
+  phone        String? // Nomor telepon pelanggan (opsional)
+  transactions Transaction[] // Relasi ke transaksi pelanggan
+  createdAt    DateTime      @default(now()) // Waktu pembuatan data
+  updatedAt    DateTime      @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menyimpan data pelanggan untuk transaksi dan analisis
+
+  @@index([phone]) // Index gabungan
+}
+
+// Model Transaction: Menyimpan data transaksi penjualan
+model Transaction {
+  id            String          @id @default(uuid()) // ID unik transaksi (UUID)
+  customer      Customer?       @relation(fields: [customerId], references: [id]) // Relasi ke pelanggan
+  customerId    String? // ID pelanggan (foreign key, opsional)
+  totalAmount   Float // Total jumlah pembayaran
+  profit        Float // Total keuntungan dari transaksi
+  paymentMethod PaymentMethod // Metode pembayaran
+  items         TransactionItem[] // Relasi ke item-item dalam transaksi
+  processedBy   User?           @relation(fields: [userId], references: [id]) // Relasi ke pengguna yang memproses
+  userId        Int? // ID pengguna yang memproses (opsional)
+  diskon        Float           @default(0) // Jumlah diskon pada transaksi
+  catatan       String? // Catatan transaksi (opsional)
+  createdAt     DateTime        @default(now()) // Waktu pembuatan data
+  updatedAt     DateTime        @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menyimpan transaksi penjualan dengan detail pelanggan,
+  // metode pembayaran, dan informasi lainnya
+
+  @@index([customerId, createdAt]) // Index gabungan
+  @@index([userId, createdAt]) // Index gabungan
+}
+
+// Model TransactionItem: Menyimpan item-item dalam transaksi
+model TransactionItem {
+  id            String      @id @default(uuid()) // ID unik item transaksi (UUID)
+  transaction   Transaction @relation(fields: [transactionId], references: [id]) // Relasi ke transaksi
+  transactionId String // ID transaksi (foreign key)
+  product       Product     @relation(fields: [productId], references: [id]) // Relasi ke produk
+  productId     String // ID produk (foreign key)
+  size          Size        @relation(fields: [sizeId], references: [id]) // Relasi ke ukuran
+  sizeId        String // ID ukuran (foreign key)
+  quantity      Int // Jumlah item yang dibeli
+  hargaJual     Float // Harga jual item
+  hargaBeli     Float // Harga beli item (modal)
+  diskon        Float       @default(0) // Jumlah diskon pada item
+  createdAt     DateTime    @default(now()) // Waktu pembuatan data
+  updatedAt     DateTime    @updatedAt // Waktu terakhir update data
+
+  // Fungsi: Menyimpan detail item yang dijual dalam transaksi
+  // termasuk produk, ukuran, kuantitas, dan harga
+
+  @@index([transactionId]) // Index untuk mempercepat pencarian berdasarkan transaksi
+  @@index([productId, sizeId]) // Index gabungan
+}
+
+// Enum AuditActionType: Tipe aksi untuk audit log
+enum AuditActionType {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+// Model AuditLog: Mencatat semua perubahan data penting
+model AuditLog {
+  id        String          @id @default(uuid())
+  user      User            @relation(fields: [userId], references: [id])
+  userId    Int
+  action    AuditActionType // CREATE, UPDATE, DELETE
+  entity    String          // Nama model yg diubah, misal: "ProductSize"
+  entityId  String          // ID dari record yg diubah
+  changes   Json            // Menyimpan detail perubahan (sebelum & sesudah)
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+}
+
+// Tipe status notifikasi stok
+enum StockNotificationStatus {
+  LOW_STOCK
+  OUT_OF_STOCK
+  RESTOCKED // Status baru untuk menandakan produk sudah di-restock
+}
+
+// Model BARU: NotificationLog untuk melacak notifikasi yang sudah terkirim
+model NotificationLog {
+  id        String                  @id @default(uuid())
+  product   Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  status    StockNotificationStatus // LOW_STOCK, OUT_OF_STOCK, RESTOCKED
+  sentAt    DateTime                @default(now())
+  sentTo    User?                   @relation(fields: [userId], references: [id])
+  userId    Int?
+
+  @@index([productId, status]) // Index untuk pencarian cepat
+}

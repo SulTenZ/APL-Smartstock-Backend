@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTP Verification - APL Shoes Secondbrand</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap");
+
+      body {
+        font-family: "Inter", Arial, sans-serif;
+        background-color: #f4f6f9;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+        color: #333;
+      }
+      .email-container {
+        max-width: 600px;
+        margin: 20px auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      .email-header {
+        background-color: #0073e6;
+        color: white;
+        text-align: center;
+        padding: 20px;
+      }
+      .email-header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .email-content {
+        padding: 30px;
+      }
+      .otp-section {
+        background-color: #f0f4f8;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        margin: 20px 0;
+      }
+      .otp-code {
+        font-size: 36px;
+        font-weight: 700;
+        color: #0073e6;
+        letter-spacing: 8px;
+        margin: 15px 0;
+      }
+      .email-footer {
+        background-color: #f4f6f9;
+        text-align: center;
+        padding: 15px;
+        font-size: 12px;
+        color: #6b7280;
+      }
+      .security-note {
+        font-size: 14px;
+        color: #6b7280;
+        text-align: center;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="email-header">
+        <h1>APL Shoes Secondbrand</h1>
+      </div>
+
+      <div class="email-content">
+        <p>Halo,</p>
+
+        <p>
+          Terima kasih telah mendaftar di APL Shoes Secondbrand. Untuk
+          menyelesaikan proses pendaftaran, gunakan One-Time Password (OTP)
+          berikut:
+        </p>
+
+        <div class="otp-section">
+          <p>Kode OTP Anda:</p>
+          <div class="otp-code">{{OTP}}</div>
+        </div>
+
+        <p>
+          Kode ini hanya berlaku selama 10 menit. Jangan bagikan kode ini dengan
+          siapapun.
+        </p>
+
+        <p>Jika Anda tidak melakukan pendaftaran, abaikan email ini.</p>
+      </div>
+
+      <div class="security-note">
+        Demi keamanan, kami tidak akan pernah meminta password atau OTP Anda
+        melalui email.
+      </div>
+
+      <div class="email-footer">
+        © 2024 APL Shoes Secondbrand. All rights reserved.
+      </div>
+    </div>
+  </body>
+</html>
