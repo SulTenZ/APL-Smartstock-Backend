@@ -1,6 +1,7 @@
 // utils/oneSignal.js
 import axios from "axios";
 import dotenv from "dotenv";
+import prisma from "../config/prisma.js"; // <-- Import Prisma Client
 
 dotenv.config();
 
@@ -9,13 +10,44 @@ const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
 const ONESIGNAL_API_URL = "https://onesignal.com/api/v1/notifications";
 
 /**
- * Mengirim notifikasi ke semua pengguna yang tersubscribe
- * @param {Object} notification - Object notifikasi
- * @param {string} notification.heading - Judul notifikasi
- * @param {string} notification.content - Isi notifikasi
- * @param {Object} notification.data - Data tambahan (opsional)
- * @param {Array} notification.playerIds - Array player IDs spesifik (opsional)
- * @param {Array} notification.segments - Array segments (default: ["All"])
+ * Fungsi internal untuk menyimpan notifikasi ke database
+ */
+const saveNotificationToDb = async (notificationData) => {
+  try {
+    const { heading, content, data, segments } = notificationData;
+    const type = data?.type || 'CUSTOM';
+
+    // Jika targetnya adalah semua user (segments "All"), ambil semua ID user
+    if (segments?.includes("All")) {
+      const allUsers = await prisma.user.findMany({
+        select: { id: true },
+      });
+
+      const notificationsToCreate = allUsers.map(user => ({
+        userId: user.id,
+        type: type,
+        heading: heading,
+        content: content,
+        productId: data?.productId || null,
+      }));
+
+      // Buat notifikasi untuk setiap user
+      await prisma.notification.createMany({
+        data: notificationsToCreate,
+      });
+
+      console.log(`Saved ${allUsers.length} notifications to DB for all users.`);
+    }
+    // Note: Anda bisa menambahkan logika untuk segments lain atau playerIds di sini jika perlu
+    
+  } catch (error) {
+    console.error("Error saving notification to database:", error);
+  }
+};
+
+
+/**
+ * Mengirim notifikasi dan menyimpannya ke database
  */
 export const sendNotification = async ({
   heading,
@@ -34,15 +66,12 @@ export const sendNotification = async ({
       data: data,
     };
 
-    // Jika playerIds diberikan, gunakan include_player_ids
-    // Jika tidak, gunakan segments
     if (playerIds && playerIds.length > 0) {
       notificationBody.include_player_ids = playerIds;
     } else {
       notificationBody.included_segments = segments;
     }
 
-    // Tambahkan gambar jika ada
     if (imageUrl) {
       notificationBody.small_icon = imageUrl;
       notificationBody.large_icon = imageUrl;
@@ -60,6 +89,11 @@ export const sendNotification = async ({
     });
 
     console.log("OneSignal notification sent successfully:", response.data);
+
+    // --- SIMPAN NOTIFIKASI KE DB SETELAH BERHASIL DIKIRIM ---
+    await saveNotificationToDb({ heading, content, data, segments });
+    // --------------------------------------------------------
+
     return {
       success: true,
       data: response.data,
@@ -73,11 +107,7 @@ export const sendNotification = async ({
   }
 };
 
-/**
- * Mengirim notifikasi stok rendah
- * @param {Object} product - Data produk
- * @param {Array} lowStockSizes - Array ukuran dengan stok rendah
- */
+// ... sisa file (sendLowStockNotification, dll) tidak perlu diubah ...
 export const sendLowStockNotification = async (product, lowStockSizes) => {
   const sizeLabels = lowStockSizes.map(s => s.size.label).join(", ");
   
@@ -100,10 +130,6 @@ export const sendLowStockNotification = async (product, lowStockSizes) => {
   });
 };
 
-/**
- * Mengirim notifikasi stok habis
- * @param {Object} product - Data produk
- */
 export const sendOutOfStockNotification = async (product) => {
   return sendNotification({
     heading: "🚨 Stok Habis!",
@@ -118,13 +144,6 @@ export const sendOutOfStockNotification = async (product) => {
   });
 };
 
-/**
- * Mengirim notifikasi custom ke pengguna tertentu
- * @param {Array} playerIds - Array OneSignal player IDs
- * @param {string} heading - Judul notifikasi
- * @param {string} content - Isi notifikasi
- * @param {Object} data - Data tambahan
- */
 export const sendCustomNotification = async (playerIds, heading, content, data = {}) => {
   return sendNotification({
     heading,

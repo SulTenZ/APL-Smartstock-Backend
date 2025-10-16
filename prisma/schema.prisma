@@ -28,6 +28,7 @@ model User {
   updatedAt                  DateTime        @updatedAt // Waktu terakhir update data
   auditLogs                  AuditLog[] // Tambahkan ini
   notificationLogs           NotificationLog[] // Relasi ke log notifikasi
+  notifications              Notification[] // Relasi ke notifikasi yang diterima user
 
   // Fungsi: Pengelolaan user admin/staff yang dapat melakukan transaksi
 }
@@ -102,6 +103,7 @@ model Product {
   stockBatchId     String? // FK ke StockBatch (opsional)
   stockBatch       StockBatch?       @relation(fields: [stockBatchId], references: [id])
   notificationLogs NotificationLog[] // Relasi ke log notifikasi
+  notifications    Notification[] // Relasi ke notifikasi terkait produk ini
   createdAt        DateTime          @default(now()) // Waktu pembuatan data
   updatedAt        DateTime          @updatedAt // Waktu terakhir update data
 
@@ -277,4 +279,20 @@ model NotificationLog {
   userId    Int?
 
   @@index([productId, status]) // Index untuk pencarian cepat
+}
+
+// --- MODEL BARU UNTUK MENYIMPAN NOTIFIKASI ---
+model Notification {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  type      String // e.g., 'LOW_STOCK', 'OUT_OF_STOCK', 'PROMO', 'CUSTOM'
+  heading   String
+  content   String
+  isRead    Boolean  @default(false)
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productId String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

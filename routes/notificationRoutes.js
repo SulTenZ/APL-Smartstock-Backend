@@ -2,28 +2,36 @@
 import express from "express";
 import * as notificationController from "../controllers/notificationController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
-import cronAuthMiddleware from "../middlewares/cronAuthMiddleware.js"; // <-- Import middleware baru
+import cronAuthMiddleware from "../middlewares/cronAuthMiddleware.js";
 
 const router = express.Router();
 
-// Endpoint ini yang akan dipanggil oleh cron-job.org
-// Menggunakan middleware khusus untuk cron job
+// --- CRON JOB ROUTE (Otentikasi khusus) ---
 router.post(
   "/check-low-stock",
-  cronAuthMiddleware.verifyCronSecret, // <-- Gunakan middleware cron di sini
+  cronAuthMiddleware.verifyCronSecret,
   notificationController.checkLowStockProducts
 );
 
-// --- Routes di bawah ini tetap memerlukan autentikasi login user biasa ---
+
+// --- ROUTES UNTUK MOBILE APP (Otentikasi user biasa) ---
+
+// Middleware untuk semua route di bawah ini
 router.use(authMiddleware.verifyToken);
 
-// Route untuk mengirim notifikasi custom
+// GET semua notifikasi untuk user
+router.get("/", notificationController.getNotificationsForUser);
+
+// POST untuk menandai semua notifikasi sebagai sudah dibaca
+router.post("/read-all", notificationController.markAllNotificationsAsRead);
+
+// PATCH untuk menandai satu notifikasi sebagai sudah dibaca
+router.patch("/:id/read", notificationController.markNotificationAsRead);
+
+
+// --- ROUTES LAMA (tetap di bawah otentikasi user biasa) ---
 router.post("/send-custom", notificationController.sendCustomNotification);
-
-// Route untuk test notifikasi
 router.post("/test", notificationController.sendTestNotification);
-
-// Route untuk mendapatkan statistik notifikasi
 router.get("/stats", notificationController.getNotificationStats);
 
 export default router;
