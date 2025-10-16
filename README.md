@@ -15,7 +15,6 @@ Proyek ini menyediakan serangkaian *endpoint* API untuk mengelola berbagai aspek
 * **Laporan dan Analitik**: Menghasilkan laporan keuangan bulanan, melacak keuntungan dari waktu ke waktu, dan menganalisis produk serta merek yang paling menguntungkan.
 * **Notifikasi Otomatis**: Mengirimkan notifikasi stok rendah dan stok habis secara otomatis untuk membantu menjaga ketersediaan produk.
 * **Log Audit**: Mencatat semua perubahan penting pada data untuk tujuan keamanan dan pelacakan.
-* **Manajemen Brand dan Kategori**: Mengelompokkan produk berdasarkan merek dan kategori untuk memudahkan pengelolaan dan analisis.
 
 ## 🛠️ Teknologi yang Digunakan
 
