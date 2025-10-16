@@ -6,13 +6,124 @@ import {
   sendNotification,
 } from "../utils/oneSignal.js";
 
+// --- FUNGSI-FUNGSI BARU UNTUK MOBILE APP ---
+
+/**
+ * GET /api/notifications
+ * Mengambil semua notifikasi untuk user yang sedang login
+ */
+export const getNotificationsForUser = async (req, res) => {
+  try {
+    const userId = req.user.id; // Diambil dari token JWT via authMiddleware
+
+    const notifications = await prisma.notification.findMany({
+      where: { userId: userId },
+      orderBy: { createdAt: 'desc' }, // Tampilkan yang terbaru di atas
+      include: {
+        product: {
+          select: {
+            id: true,
+            nama: true,
+            image: true,
+          }
+        }
+      }
+    });
+
+    const unreadCount = await prisma.notification.count({
+      where: {
+        userId: userId,
+        isRead: false,
+      },
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Notifikasi berhasil diambil",
+      data: {
+        notifications,
+        unreadCount,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting notifications for user:", error);
+    return res.status(500).json({ status: "error", message: "Gagal mengambil notifikasi" });
+  }
+};
+
+/**
+ * PATCH /api/notifications/:id/read
+ * Menandai satu notifikasi sebagai sudah dibaca
+ */
+export const markNotificationAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const notification = await prisma.notification.findUnique({
+      where: { id: id },
+    });
+
+    if (!notification) {
+      return res.status(404).json({ status: "error", message: "Notifikasi tidak ditemukan" });
+    }
+
+    if (notification.userId !== userId) {
+      return res.status(403).json({ status: "error", message: "Anda tidak berhak mengakses notifikasi ini" });
+    }
+
+    const updatedNotification = await prisma.notification.update({
+      where: { id: id },
+      data: { isRead: true },
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Notifikasi ditandai sebagai sudah dibaca",
+      data: updatedNotification,
+    });
+  } catch (error) {
+    console.error("Error marking notification as read:", error);
+    return res.status(500).json({ status: "error", message: "Gagal memperbarui notifikasi" });
+  }
+};
+
+/**
+ * POST /api/notifications/read-all
+ * Menandai semua notifikasi user sebagai sudah dibaca
+ */
+export const markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await prisma.notification.updateMany({
+      where: {
+        userId: userId,
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+      },
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Semua notifikasi ditandai sebagai sudah dibaca",
+    });
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+    return res.status(500).json({ status: "error", message: "Gagal memperbarui notifikasi" });
+  }
+};
+
+
+// --- KODE LAMA ANDA YANG SUDAH BENAR ---
+
 export const checkLowStockProducts = async (req, res) => {
   try {
     console.log("Cron Job: Starting daily low stock check...");
     const notificationsSentDetails = [];
 
-    // --- 1. Logika untuk Produk Stok Rendah (Low Stock) ---
-    // Cari produk yang stoknya rendah dan BELUM ADA log notifikasi 'LOW_STOCK'
     const lowStockProducts = await prisma.product.findMany({
       where: {
         stock: {
@@ -45,8 +156,6 @@ export const checkLowStockProducts = async (req, res) => {
       }
     }
 
-    // --- 2. Logika untuk Produk Stok Habis (Out of Stock) ---
-    // Cari produk yang stoknya habis dan BELUM ADA log notifikasi 'OUT_OF_STOCK'
     const outOfStockProducts = await prisma.product.findMany({
       where: {
         stock: 0,
@@ -76,15 +185,13 @@ export const checkLowStockProducts = async (req, res) => {
       }
     }
 
-    // --- 3. Logika Pembersihan untuk Produk yang Sudah di-Restock ---
-    // Cari produk yang stoknya sudah normal TAPI masih punya log notifikasi
     const restockedProducts = await prisma.product.findMany({
       where: {
         stock: {
           gt: prisma.product.fields.minStock,
         },
         notificationLogs: {
-          some: {}, // Cek apakah ada log notifikasi apapun
+          some: {},
         },
       },
       select: {
@@ -121,10 +228,6 @@ export const checkLowStockProducts = async (req, res) => {
   }
 };
 
-
-/**
- * Kirim notifikasi custom (manual)
- */
 export const sendCustomNotification = async (req, res) => {
   try {
     const { heading, content, data, playerIds, segments } = req.body;
@@ -167,9 +270,6 @@ export const sendCustomNotification = async (req, res) => {
   }
 };
 
-/**
- * Test endpoint untuk mengirim notifikasi test
- */
 export const sendTestNotification = async (req, res) => {
   try {
     const result = await sendNotification({
@@ -204,9 +304,6 @@ export const sendTestNotification = async (req, res) => {
   }
 };
 
-/**
- * Get notification stats
- */
 export const getNotificationStats = async (req, res) => {
   try {
     const lowStockCount = await prisma.product.count({
