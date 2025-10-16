@@ -1,5 +1,4 @@
 // controllers/notificationController.js
-
 import prisma from "../config/prisma.js";
 import {
   sendLowStockNotification,
@@ -7,121 +6,113 @@ import {
   sendNotification,
 } from "../utils/oneSignal.js";
 
-/**
- * Cek semua produk dengan stok rendah/habis dan kirim notifikasi jika belum pernah dikirim.
- * Juga membersihkan log notifikasi jika produk sudah di-restock.
- */
 export const checkLowStockProducts = async (req, res) => {
   try {
-    console.log("Cron Job: Starting low stock check...");
+    console.log("Cron Job: Starting daily low stock check...");
     const notificationsSentDetails = [];
 
     // --- 1. Logika untuk Produk Stok Rendah (Low Stock) ---
+    // Cari produk yang stoknya rendah dan BELUM ADA log notifikasi 'LOW_STOCK'
     const lowStockProducts = await prisma.product.findMany({
       where: {
         stock: {
           lte: prisma.product.fields.minStock,
           gt: 0,
         },
+        notificationLogs: {
+          none: { status: "LOW_STOCK" },
+        },
       },
       include: {
         sizes: { include: { size: true } },
-        notificationLogs: {
-          where: { status: "LOW_STOCK" },
-        },
       },
     });
 
     for (const product of lowStockProducts) {
-      // Kirim notifikasi HANYA jika belum ada log 'LOW_STOCK' untuk produk ini
-      if (product.notificationLogs.length === 0) {
-        const result = await sendLowStockNotification(product, product.sizes);
-        if (result.success) {
-          // Buat log bahwa notifikasi telah dikirim
-          await prisma.notificationLog.create({
-            data: {
-              productId: product.id,
-              status: "LOW_STOCK",
-            },
-          });
-          notificationsSentDetails.push({
-            productName: product.nama,
-            type: "LOW_STOCK",
-            success: true,
-          });
-        }
+      const result = await sendLowStockNotification(product, product.sizes);
+      if (result.success) {
+        await prisma.notificationLog.create({
+          data: {
+            productId: product.id,
+            status: "LOW_STOCK",
+          },
+        });
+        notificationsSentDetails.push({
+          productName: product.nama,
+          type: "LOW_STOCK",
+          success: true,
+        });
       }
     }
 
     // --- 2. Logika untuk Produk Stok Habis (Out of Stock) ---
+    // Cari produk yang stoknya habis dan BELUM ADA log notifikasi 'OUT_OF_STOCK'
     const outOfStockProducts = await prisma.product.findMany({
-      where: { stock: 0 },
-      include: {
+      where: {
+        stock: 0,
         notificationLogs: {
-          where: { status: "OUT_OF_STOCK" },
+          none: { status: "OUT_OF_STOCK" },
         },
       },
     });
 
     for (const product of outOfStockProducts) {
-      // Kirim notifikasi HANYA jika belum ada log 'OUT_OF_STOCK'
-      if (product.notificationLogs.length === 0) {
-        const result = await sendOutOfStockNotification(product);
-        if (result.success) {
-          // Hapus log LOW_STOCK jika ada, ganti dengan OUT_OF_STOCK
-          await prisma.notificationLog.deleteMany({
-            where: { productId: product.id, status: "LOW_STOCK" },
-          });
-          await prisma.notificationLog.create({
-            data: {
-              productId: product.id,
-              status: "OUT_OF_STOCK",
-            },
-          });
-          notificationsSentDetails.push({
-            productName: product.nama,
-            type: "OUT_OF_STOCK",
-            success: true,
-          });
-        }
+      const result = await sendOutOfStockNotification(product);
+      if (result.success) {
+        await prisma.notificationLog.deleteMany({
+          where: { productId: product.id, status: "LOW_STOCK" },
+        });
+        await prisma.notificationLog.create({
+          data: {
+            productId: product.id,
+            status: "OUT_OF_STOCK",
+          },
+        });
+        notificationsSentDetails.push({
+          productName: product.nama,
+          type: "OUT_OF_STOCK",
+          success: true,
+        });
       }
     }
 
-    // --- 3. Logika Pembersihan (Cleanup Logic for Restocked Products) ---
-    const previouslyNotifiedProducts = await prisma.product.findMany({
+    // --- 3. Logika Pembersihan untuk Produk yang Sudah di-Restock ---
+    // Cari produk yang stoknya sudah normal TAPI masih punya log notifikasi
+    const restockedProducts = await prisma.product.findMany({
       where: {
         stock: {
-          gt: prisma.product.fields.minStock, // Stok sudah kembali normal
+          gt: prisma.product.fields.minStock,
         },
-        OR: [
-          { notificationLogs: { some: { status: "LOW_STOCK" } } },
-          { notificationLogs: { some: { status: "OUT_OF_STOCK" } } },
-        ],
+        notificationLogs: {
+          some: {}, // Cek apakah ada log notifikasi apapun
+        },
+      },
+      select: {
+        id: true,
       },
     });
 
-    if (previouslyNotifiedProducts.length > 0) {
-        const productIdsToClear = previouslyNotifiedProducts.map(p => p.id);
-        await prisma.notificationLog.deleteMany({
-            where: {
-                productId: { in: productIdsToClear },
-            },
-        });
-        console.log(`Cleared notification logs for ${productIdsToClear.length} restocked products.`);
+    if (restockedProducts.length > 0) {
+      const productIdsToClear = restockedProducts.map((p) => p.id);
+      await prisma.notificationLog.deleteMany({
+        where: {
+          productId: { in: productIdsToClear },
+        },
+      });
+      console.log(`Cleared notification logs for ${productIdsToClear.length} restocked products.`);
     }
 
-
-    console.log("Cron Job: Finished low stock check.");
+    console.log("Cron Job: Finished daily low stock check.");
     return res.status(200).json({
       status: "success",
-      message: "Pengecekan stok selesai.",
+      message: "Pengecekan stok harian selesai.",
       data: {
         notificationsSentCount: notificationsSentDetails.length,
         details: notificationsSentDetails,
       },
     });
   } catch (error) {
-    console.error("Error checking low stock products:", error);
+    console.error("Error during daily low stock check:", error);
     return res.status(500).json({
       status: "error",
       message: "Gagal mengecek stok produk",
@@ -218,7 +209,6 @@ export const sendTestNotification = async (req, res) => {
  */
 export const getNotificationStats = async (req, res) => {
   try {
-    // Ambil statistik produk dengan stok rendah
     const lowStockCount = await prisma.product.count({
       where: {
         stock: {
