@@ -1,19 +1,16 @@
 // repositories/transactionRepository.js
-import { PrismaClient } from "@prisma/client";
-import { updateStockAfterTransaction } from "./productSizeRepository.js";
-
-const prisma = new PrismaClient();
+import prisma from "../config/prisma.js"; // <--- PERBAIKAN: Gunakan singleton
+// HAPUS: import { PrismaClient } from "@prisma/client";
+// HAPUS: const prisma = new PrismaClient();
 
 export const createTransaction = async (transactionData, items) => {
   return prisma.$transaction(async (tx) => {
     // 1. Buat transaksi baru
     const transaction = await tx.transaction.create({
       data: {
-        // Menggunakan connect untuk customer jika customerId ada
         ...(transactionData.customerId ? {
           customer: { connect: { id: transactionData.customerId } }
         } : {}),
-        // Menggunakan connect untuk user
         ...(transactionData.userId ? {
           processedBy: { connect: { id: transactionData.userId } }
         } : {}),
@@ -45,9 +42,8 @@ export const createTransaction = async (transactionData, items) => {
       },
     });
 
-    // 2. Update stok produk untuk setiap item yang dibeli
+    // 2. Update stok produk
     for (const item of items) {
-      // Cari ProductSize
       const productSize = await tx.productSize.findFirst({
         where: {
           productId: item.productId,
@@ -61,7 +57,6 @@ export const createTransaction = async (transactionData, items) => {
         );
       }
 
-      // Update stok pada ProductSize
       const newQuantity = productSize.quantity - item.quantity;
       if (newQuantity < 0) {
         throw new Error("Stok tidak mencukupi");
@@ -72,14 +67,10 @@ export const createTransaction = async (transactionData, items) => {
         data: { quantity: newQuantity },
       });
 
-      // Update total stok pada produk
+      // Update total stok produk induk
       const result = await tx.productSize.aggregate({
-        where: {
-          productId: item.productId,
-        },
-        _sum: {
-          quantity: true,
-        },
+        where: { productId: item.productId },
+        _sum: { quantity: true },
       });
 
       const totalStock = result._sum.quantity || 0;
@@ -90,6 +81,9 @@ export const createTransaction = async (transactionData, items) => {
     }
 
     return transaction;
+  }, {
+    maxWait: 5000,
+    timeout: 20000, // <--- PERBAIKAN: Timeout 20 detik
   });
 };
 
@@ -97,17 +91,12 @@ export const getAllTransactions = async () => {
   return prisma.transaction.findMany({
     include: {
       items: {
-        include: {
-          product: true,
-          size: true,
-        },
+        include: { product: true, size: true },
       },
       customer: true,
       processedBy: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { createdAt: "desc" },
   });
 };
 
@@ -116,10 +105,7 @@ export const getTransactionById = async (id) => {
     where: { id },
     include: {
       items: {
-        include: {
-          product: true,
-          size: true,
-        },
+        include: { product: true, size: true },
       },
       customer: true,
       processedBy: true,
@@ -129,29 +115,23 @@ export const getTransactionById = async (id) => {
 
 export const updateTransaction = async (id, transactionData, newItems = []) => {
   return prisma.$transaction(async (tx) => {
-    // 1. Ambil data transaksi yang ada
+    // 1. Ambil data lama
     const existingTransaction = await tx.transaction.findUnique({
       where: { id },
-      include: {
-        items: true,
-      },
+      include: { items: true },
     });
 
     if (!existingTransaction) {
       throw new Error("Transaksi tidak ditemukan");
     }
 
-    // 2. Kembalikan stok untuk item-item yang ada di transaksi lama
+    // 2. Kembalikan stok item lama
     for (const item of existingTransaction.items) {
       const productSize = await tx.productSize.findFirst({
-        where: {
-          productId: item.productId,
-          sizeId: item.sizeId,
-        },
+        where: { productId: item.productId, sizeId: item.sizeId },
       });
 
       if (productSize) {
-        // Tambahkan kembali stok yang sudah terjual
         await tx.productSize.update({
           where: { id: productSize.id },
           data: { quantity: productSize.quantity + item.quantity },
@@ -159,14 +139,12 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
       }
     }
 
-    // 3. Hapus semua item transaksi yang lama
+    // 3. Hapus item lama
     await tx.transactionItem.deleteMany({
-      where: {
-        transactionId: id,
-      },
+      where: { transactionId: id },
     });
 
-    // 4. Update transaksi dengan data baru
+    // 4. Update transaksi
     const updatedTransaction = await tx.transaction.update({
       where: { id },
       data: {
@@ -189,23 +167,17 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
       },
       include: {
         items: {
-          include: {
-            product: true,
-            size: true,
-          },
+          include: { product: true, size: true },
         },
         customer: true,
         processedBy: true,
       },
     });
 
-    // 5. Kurangi stok untuk item-item baru
+    // 5. Kurangi stok item baru
     for (const item of newItems) {
       const productSize = await tx.productSize.findFirst({
-        where: {
-          productId: item.productId,
-          sizeId: item.sizeId,
-        },
+        where: { productId: item.productId, sizeId: item.sizeId },
       });
 
       if (!productSize) {
@@ -214,7 +186,6 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
         );
       }
 
-      // Update stok pada ProductSize
       const newQuantity = productSize.quantity - item.quantity;
       if (newQuantity < 0) {
         throw new Error(
@@ -228,7 +199,7 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
       });
     }
 
-    // 6. Update total stok pada semua produk yang terlibat
+    // 6. Recalculate total stock semua produk terkait
     const allProductIds = [
       ...new Set([
         ...existingTransaction.items.map((item) => item.productId),
@@ -238,12 +209,8 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
 
     for (const productId of allProductIds) {
       const result = await tx.productSize.aggregate({
-        where: {
-          productId,
-        },
-        _sum: {
-          quantity: true,
-        },
+        where: { productId },
+        _sum: { quantity: true },
       });
 
       const totalStock = result._sum.quantity || 0;
@@ -254,47 +221,37 @@ export const updateTransaction = async (id, transactionData, newItems = []) => {
     }
 
     return updatedTransaction;
+  }, {
+    maxWait: 5000,
+    timeout: 20000, // <--- PERBAIKAN: Timeout 20 detik
   });
 };
 
 export const deleteTransaction = async (id) => {
   return prisma.$transaction(async (tx) => {
-    // 1. Ambil data transaksi yang akan dihapus
     const transaction = await tx.transaction.findUnique({
       where: { id },
-      include: {
-        items: true,
-      },
+      include: { items: true },
     });
 
     if (!transaction) {
       throw new Error("Transaksi tidak ditemukan");
     }
 
-    // 2. Kembalikan stok untuk setiap item yang dibeli
     for (const item of transaction.items) {
       const productSize = await tx.productSize.findFirst({
-        where: {
-          productId: item.productId,
-          sizeId: item.sizeId,
-        },
+        where: { productId: item.productId, sizeId: item.sizeId },
       });
 
       if (productSize) {
-        // Tambahkan kembali stok yang sudah terjual
         await tx.productSize.update({
           where: { id: productSize.id },
           data: { quantity: productSize.quantity + item.quantity },
         });
 
-        // Update total stok pada produk
         const result = await tx.productSize.aggregate({
-          where: {
-            productId: item.productId,
-          },
-          _sum: {
-            quantity: true,
-          },
+          where: { productId: item.productId },
+          _sum: { quantity: true },
         });
 
         const totalStock = result._sum.quantity || 0;
@@ -305,86 +262,59 @@ export const deleteTransaction = async (id) => {
       }
     }
 
-    // 3. Hapus transaksi
     await tx.transactionItem.deleteMany({
-      where: {
-        transactionId: id,
-      },
+      where: { transactionId: id },
     });
 
     return tx.transaction.delete({
       where: { id },
     });
+  }, {
+    timeout: 20000, // <--- PERBAIKAN: Timeout 20 detik
   });
 };
 
 export const getTransactionsByDate = async (startDate, endDate) => {
   const dateFilter = {};
-
-  if (startDate) {
-    dateFilter.gte = new Date(startDate);
-  }
-
+  if (startDate) dateFilter.gte = new Date(startDate);
   if (endDate) {
     dateFilter.lte = new Date(endDate);
-    // Set waktu akhir hari
     dateFilter.lte.setHours(23, 59, 59, 999);
   }
 
   const where = {};
-  if (startDate || endDate) {
-    where.createdAt = dateFilter;
-  }
+  if (startDate || endDate) where.createdAt = dateFilter;
 
   return prisma.transaction.findMany({
     where,
     include: {
       items: {
-        include: {
-          product: true,
-          size: true,
-        },
+        include: { product: true, size: true },
       },
       customer: true,
       processedBy: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { createdAt: "desc" },
   });
 };
 
 export const getProfitReport = async (startDate, endDate) => {
   const dateFilter = {};
-
-  if (startDate) {
-    dateFilter.gte = new Date(startDate);
-  }
-
+  if (startDate) dateFilter.gte = new Date(startDate);
   if (endDate) {
     dateFilter.lte = new Date(endDate);
-    // Set waktu akhir hari
     dateFilter.lte.setHours(23, 59, 59, 999);
   }
 
   const where = {};
-  if (startDate || endDate) {
-    where.createdAt = dateFilter;
-  }
+  if (startDate || endDate) where.createdAt = dateFilter;
 
-  // Ambil semua transaksi pada periode yang ditentukan
   const transactions = await prisma.transaction.findMany({
     where,
-    include: {
-      items: true,
-      customer: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+    include: { items: true, customer: true },
+    orderBy: { createdAt: "desc" },
   });
 
-  // Kalkulasi profit per hari
   const profitByDay = {};
   const revenueByDay = {};
   const costByDay = {};
@@ -394,31 +324,19 @@ export const getProfitReport = async (startDate, endDate) => {
     profitByDay[date] = (profitByDay[date] || 0) + transaction.profit;
     revenueByDay[date] = (revenueByDay[date] || 0) + transaction.totalAmount;
 
-    // Hitung total modal per transaksi
     let transactionCost = 0;
     for (const item of transaction.items) {
       transactionCost += item.hargaBeli * item.quantity;
     }
-
     costByDay[date] = (costByDay[date] || 0) + transactionCost;
   }
 
-  // Kalkulasi profit per produk
   const productSales = await prisma.transactionItem.groupBy({
     by: ["productId"],
-    where: {
-      transaction: {
-        createdAt: dateFilter,
-      },
-    },
-    _sum: {
-      quantity: true,
-      hargaJual: true,
-      hargaBeli: true,
-    },
+    where: { transaction: { createdAt: dateFilter } },
+    _sum: { quantity: true, hargaJual: true, hargaBeli: true },
   });
 
-  // Ambil nama produk dan hitung profit
   const productProfit = [];
   for (const product of productSales) {
     const productDetail = await prisma.product.findUnique({
@@ -441,34 +359,22 @@ export const getProfitReport = async (startDate, endDate) => {
     });
   }
 
-  // Urutkan berdasarkan profit tertinggi
   productProfit.sort((a, b) => b.profit - a.profit);
 
-  // Kalkulasi profit per brand
   const brandProfit = {};
   for (const item of productProfit) {
     if (!brandProfit[item.brandName]) {
-      brandProfit[item.brandName] = {
-        quantitySold: 0,
-        revenue: 0,
-        cost: 0,
-        profit: 0,
-      };
+      brandProfit[item.brandName] = { quantitySold: 0, revenue: 0, cost: 0, profit: 0 };
     }
-
     brandProfit[item.brandName].quantitySold += item.quantitySold;
     brandProfit[item.brandName].revenue += item.revenue;
     brandProfit[item.brandName].cost += item.cost;
     brandProfit[item.brandName].profit += item.profit;
   }
 
-  // Kalkulasi total
   const totalRevenue = transactions.reduce((sum, t) => sum + t.totalAmount, 0);
   const totalProfit = transactions.reduce((sum, t) => sum + t.profit, 0);
-  const totalCost = Object.values(costByDay).reduce(
-    (sum, cost) => sum + cost,
-    0
-  );
+  const totalCost = Object.values(costByDay).reduce((sum, cost) => sum + cost, 0);
 
   return {
     summary: {
