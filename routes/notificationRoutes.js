@@ -2,34 +2,38 @@
 import express from "express";
 import * as notificationController from "../controllers/notificationController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
-import cronAuthMiddleware from "../middlewares/cronAuthMiddleware.js";
+// Import middleware khusus Cron (gunakan destructuring { })
+import { verifyCronSecret } from "../middlewares/cronAuthMiddleware.js";
 
 const router = express.Router();
 
-// --- CRON JOB ROUTE (Otentikasi khusus) ---
-router.post(
+// ==========================================
+// 1. ROUTE KHUSUS CRON JOB (Server-to-Server)
+// ==========================================
+// Endpoint ini dilindungi oleh Secret Key, bukan Token User.
+// Method GET lebih umum untuk Cron Job sederhana.
+router.get(
   "/check-low-stock",
-  cronAuthMiddleware.verifyCronSecret,
+  verifyCronSecret,
   notificationController.checkLowStockProducts
 );
 
-
-// --- ROUTES UNTUK MOBILE APP (Otentikasi user biasa) ---
-
-// Middleware untuk semua route di bawah ini
+// ==========================================
+// 2. ROUTE USER (Mobile App)
+// ==========================================
+// Semua route di bawah ini mewajibkan header "Authorization: Bearer <token_login>"
 router.use(authMiddleware.verifyToken);
 
-// GET semua notifikasi untuk user
+// Mengambil list notifikasi user
 router.get("/", notificationController.getNotificationsForUser);
 
-// POST untuk menandai semua notifikasi sebagai sudah dibaca
+// Menandai semua sudah dibaca
 router.post("/read-all", notificationController.markAllNotificationsAsRead);
 
-// PATCH untuk menandai satu notifikasi sebagai sudah dibaca
+// Menandai satu notifikasi sudah dibaca
 router.patch("/:id/read", notificationController.markNotificationAsRead);
 
-
-// --- ROUTES LAMA (tetap di bawah otentikasi user biasa) ---
+// --- ROUTES UNTUK TESTING / ADMIN MANUAL ---
 router.post("/send-custom", notificationController.sendCustomNotification);
 router.post("/test", notificationController.sendTestNotification);
 router.get("/stats", notificationController.getNotificationStats);

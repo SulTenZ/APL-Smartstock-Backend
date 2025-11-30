@@ -8,26 +8,22 @@ import {
 
 // --- FUNGSI-FUNGSI BARU UNTUK MOBILE APP ---
 
-/**
- * GET /api/notifications
- * Mengambil semua notifikasi untuk user yang sedang login
- */
 export const getNotificationsForUser = async (req, res) => {
   try {
-    const userId = req.user.id; // Diambil dari token JWT via authMiddleware
+    const userId = req.user.id;
 
     const notifications = await prisma.notification.findMany({
       where: { userId: userId },
-      orderBy: { createdAt: 'desc' }, // Tampilkan yang terbaru di atas
+      orderBy: { createdAt: "desc" },
       include: {
         product: {
           select: {
             id: true,
             nama: true,
             image: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     const unreadCount = await prisma.notification.count({
@@ -47,14 +43,12 @@ export const getNotificationsForUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Error getting notifications for user:", error);
-    return res.status(500).json({ status: "error", message: "Gagal mengambil notifikasi" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Gagal mengambil notifikasi" });
   }
 };
 
-/**
- * PATCH /api/notifications/:id/read
- * Menandai satu notifikasi sebagai sudah dibaca
- */
 export const markNotificationAsRead = async (req, res) => {
   try {
     const { id } = req.params;
@@ -65,11 +59,16 @@ export const markNotificationAsRead = async (req, res) => {
     });
 
     if (!notification) {
-      return res.status(404).json({ status: "error", message: "Notifikasi tidak ditemukan" });
+      return res
+        .status(404)
+        .json({ status: "error", message: "Notifikasi tidak ditemukan" });
     }
 
     if (notification.userId !== userId) {
-      return res.status(403).json({ status: "error", message: "Anda tidak berhak mengakses notifikasi ini" });
+      return res.status(403).json({
+        status: "error",
+        message: "Anda tidak berhak mengakses notifikasi ini",
+      });
     }
 
     const updatedNotification = await prisma.notification.update({
@@ -84,14 +83,12 @@ export const markNotificationAsRead = async (req, res) => {
     });
   } catch (error) {
     console.error("Error marking notification as read:", error);
-    return res.status(500).json({ status: "error", message: "Gagal memperbarui notifikasi" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Gagal memperbarui notifikasi" });
   }
 };
 
-/**
- * POST /api/notifications/read-all
- * Menandai semua notifikasi user sebagai sudah dibaca
- */
 export const markAllNotificationsAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -112,24 +109,27 @@ export const markAllNotificationsAsRead = async (req, res) => {
     });
   } catch (error) {
     console.error("Error marking all notifications as read:", error);
-    return res.status(500).json({ status: "error", message: "Gagal memperbarui notifikasi" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Gagal memperbarui notifikasi" });
   }
 };
 
-
-// --- KODE LAMA ANDA YANG SUDAH BENAR ---
+// --- KODE LOGIKA CRON JOB (DENGAN LOGGING YANG DIPERBAIKI) ---
 
 export const checkLowStockProducts = async (req, res) => {
   try {
-    console.log("Cron Job: Starting daily low stock check...");
+    console.log("⏰ Cron Job: Memulai pengecekan stok...");
     const notificationsSentDetails = [];
 
+    // 1. Cek Low Stock
     const lowStockProducts = await prisma.product.findMany({
       where: {
         stock: {
           lte: prisma.product.fields.minStock,
           gt: 0,
         },
+        // Fitur Anti-Spam: Hanya ambil yang belum ada log notifikasinya
         notificationLogs: {
           none: { status: "LOW_STOCK" },
         },
@@ -138,6 +138,10 @@ export const checkLowStockProducts = async (req, res) => {
         sizes: { include: { size: true } },
       },
     });
+
+    console.log(
+      `🔍 Ditemukan ${lowStockProducts.length} produk low stock baru.`
+    );
 
     for (const product of lowStockProducts) {
       const result = await sendLowStockNotification(product, product.sizes);
@@ -156,6 +160,7 @@ export const checkLowStockProducts = async (req, res) => {
       }
     }
 
+    // 2. Cek Out Of Stock
     const outOfStockProducts = await prisma.product.findMany({
       where: {
         stock: 0,
@@ -165,9 +170,14 @@ export const checkLowStockProducts = async (req, res) => {
       },
     });
 
+    console.log(
+      `🔍 Ditemukan ${outOfStockProducts.length} produk stok habis baru.`
+    );
+
     for (const product of outOfStockProducts) {
       const result = await sendOutOfStockNotification(product);
       if (result.success) {
+        // Hapus log low stock lama, ganti dengan out of stock
         await prisma.notificationLog.deleteMany({
           where: { productId: product.id, status: "LOW_STOCK" },
         });
@@ -185,13 +195,14 @@ export const checkLowStockProducts = async (req, res) => {
       }
     }
 
+    // 3. Bersihkan Log Produk Restock
     const restockedProducts = await prisma.product.findMany({
       where: {
         stock: {
           gt: prisma.product.fields.minStock,
         },
         notificationLogs: {
-          some: {},
+          some: {}, // Hanya ambil yang punya log (biar query efisien)
         },
       },
       select: {
@@ -206,10 +217,13 @@ export const checkLowStockProducts = async (req, res) => {
           productId: { in: productIdsToClear },
         },
       });
-      console.log(`Cleared notification logs for ${productIdsToClear.length} restocked products.`);
+      console.log(
+        `🧹 Membersihkan log untuk ${productIdsToClear.length} produk yang sudah restock.`
+      );
     }
 
-    console.log("Cron Job: Finished daily low stock check.");
+    console.log("✅ Cron Job: Pengecekan selesai.");
+
     return res.status(200).json({
       status: "success",
       message: "Pengecekan stok harian selesai.",
@@ -219,7 +233,7 @@ export const checkLowStockProducts = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error during daily low stock check:", error);
+    console.error("❌ Error Cron Job:", error);
     return res.status(500).json({
       status: "error",
       message: "Gagal mengecek stok produk",
@@ -228,9 +242,10 @@ export const checkLowStockProducts = async (req, res) => {
   }
 };
 
+// --- FUNGSI CUSTOM NOTIFICATION (TETAP SAMA) ---
 export const sendCustomNotification = async (req, res) => {
   try {
-    const { heading, content, data, playerIds, segments } = req.body;
+    const { heading, content, data, playerIds, segments, userIds } = req.body;
 
     if (!heading || !content) {
       return res.status(400).json({
@@ -239,12 +254,24 @@ export const sendCustomNotification = async (req, res) => {
       });
     }
 
+    let targetExternalIds = null;
+
+    if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { email: true },
+      });
+
+      targetExternalIds = users.map((u) => u.email).filter((e) => e !== null);
+    }
+
     const result = await sendNotification({
       heading,
       content,
       data: data || {},
       playerIds: playerIds || null,
-      segments: segments || ["All"],
+      externalUserIds: targetExternalIds,
+      segments: targetExternalIds || playerIds ? null : segments || ["All"],
     });
 
     if (result.success) {

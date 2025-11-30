@@ -8,7 +8,6 @@ generator client {
 // Konfigurasi sumber data menggunakan PostgreSQL
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // Model User: Menyimpan data pengguna aplikasi (admin/staff)

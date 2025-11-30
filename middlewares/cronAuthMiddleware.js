@@ -3,12 +3,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const CRON_SECRET = process.env.CRON_SECRET;
-
-const verifyCronSecret = (req, res, next) => {
+export const verifyCronSecret = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+    const cronSecret = process.env.CRON_SECRET;
 
+    // 1. Cek apakah ada header Authorization
     if (!authHeader) {
       return res.status(401).json({
         status: "error",
@@ -16,16 +16,25 @@ const verifyCronSecret = (req, res, next) => {
       });
     }
 
-    const token = authHeader.split(" ")[1]; // Ambil token dari "Bearer <token>"
-
-    if (!token) {
-        return res.status(401).json({
-            status: "error",
-            message: "Bearer token is missing",
-          });
+    // 2. Cek format "Bearer <token>"
+    if (!authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid token format. Use 'Bearer <CRON_SECRET>'",
+      });
     }
 
-    if (token !== CRON_SECRET) {
+    const token = authHeader.split(" ")[1];
+
+    // 3. Validasi Token
+    if (!token) {
+      return res.status(401).json({
+        status: "error",
+        message: "Bearer token is missing",
+      });
+    }
+
+    if (token !== cronSecret) {
       return res.status(403).json({
         status: "error",
         message: "Invalid cron secret",
@@ -41,5 +50,3 @@ const verifyCronSecret = (req, res, next) => {
     });
   }
 };
-
-export default { verifyCronSecret };
