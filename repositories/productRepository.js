@@ -1,5 +1,5 @@
 // repositories/productRepository.js
-import prisma from "../config/prisma.js"; // <--- PENTING: Gunakan import ini, JANGAN new PrismaClient()
+import prisma from "../config/prisma.js";
 import { updateProductTotalStock } from "./productSizeRepository.js";
 
 // Fungsi untuk memeriksa apakah nama produk sudah ada
@@ -28,7 +28,6 @@ export const getAllProducts = async ({ search = "", limit = 10, page = 1, brandI
     ];
   }
 
-  // Tambahkan filter tambahan jika tersedia
   if (brandId) whereClause.brandId = parseInt(brandId);
   if (categoryId) whereClause.categoryId = parseInt(categoryId);
   if (productTypeId) whereClause.productTypeId = productTypeId;
@@ -65,8 +64,6 @@ export const getAllProducts = async ({ search = "", limit = 10, page = 1, brandI
   };
 };
 
-
-// Fungsi untuk mendapatkan produk berdasarkan ID
 export const getProductById = async (id) => {
   return prisma.product.findUnique({
     where: { id },
@@ -84,16 +81,16 @@ export const getProductById = async (id) => {
   });
 };
 
-// Fungsi untuk membuat produk baru
+// --- FUNGSI CREATE PRODUCT (YANG DIPERBAIKI TIMEOUT-NYA) ---
 export const createProduct = async (data) => {
   const { sizes = [], ...productData } = data;
 
   return prisma.$transaction(async (tx) => {
-    // Buat produk baru dengan stock awal 0
+    // 1. Buat produk baru
     const product = await tx.product.create({
       data: {
         ...productData,
-        stock: 0, // Stok awal 0, akan dihitung dari quantity sizes
+        stock: 0,
       },
       include: {
         category: true,
@@ -103,7 +100,7 @@ export const createProduct = async (data) => {
       },
     });
 
-    // Tambahkan ukuran dan stok untuk produk
+    // 2. Tambahkan ukuran
     if (sizes.length > 0) {
       for (const size of sizes) {
         await tx.productSize.create({
@@ -114,12 +111,11 @@ export const createProduct = async (data) => {
           },
         });
       }
-
-      // Update total stok pada produk
+      // 3. Update total stok
       await updateProductTotalStock(tx, product.id);
     }
 
-    // Ambil produk lengkap dengan ukuran
+    // 4. Return data final
     return tx.product.findUnique({
       where: { id: product.id },
       include: {
@@ -134,22 +130,23 @@ export const createProduct = async (data) => {
         stockBatch: true,
       },
     });
+  }, {
+    maxWait: 5000, // Waktu tunggu maksimal untuk dapat koneksi
+    timeout: 20000, // <--- PERBAIKAN: Timeout dinaikkan jadi 20 detik
   });
 };
 
-// Fungsi untuk mengupdate produk
+// --- FUNGSI UPDATE PRODUCT (JUGA PERLU TIMEOUT) ---
 export const updateProduct = async (id, data) => {
   const { sizes, ...productData } = data;
 
   return prisma.$transaction(async (tx) => {
-    // Update data produk
     await tx.product.update({
       where: { id },
       data: productData,
     });
 
-    // Jika sizes disediakan, update stok ukuran
-    if (sizes) { 
+    if (sizes) {
       await tx.productSize.deleteMany({
         where: { productId: id },
       });
@@ -165,10 +162,8 @@ export const updateProduct = async (id, data) => {
       }
     }
 
-    // Update total stok pada produk
     await updateProductTotalStock(tx, id);
 
-    // Ambil produk lengkap
     return tx.product.findUnique({
       where: { id },
       include: {
@@ -183,25 +178,26 @@ export const updateProduct = async (id, data) => {
         stockBatch: true,
       },
     });
+  }, {
+    maxWait: 5000,
+    timeout: 20000, // <--- Set juga di sini untuk jaga-jaga
   });
 };
 
-// Fungsi untuk menghapus produk
 export const deleteProduct = async (id) => {
   return prisma.$transaction(async (tx) => {
-    // Hapus semua ProductSize terkait
     await tx.productSize.deleteMany({
       where: { productId: id },
     });
 
-    // Hapus produk
     return tx.product.delete({
       where: { id },
     });
+  }, {
+    timeout: 10000, // Delete biasanya cepat, tapi kita kasih 10s
   });
 };
 
-// Fungsi untuk mendapatkan produk dengan stok rendah
 export const getLowStockProducts = async () => {
   return prisma.product.findMany({
     where: {
@@ -221,7 +217,6 @@ export const getLowStockProducts = async () => {
   });
 };
 
-// Fungsi untuk mengupdate stok produk langsung
 export const updateProductStock = async (id, stock) => {
   return prisma.product.update({
     where: { id },
