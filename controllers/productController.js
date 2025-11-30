@@ -52,6 +52,7 @@ export const getProductById = async (req, res) => {
   }
 };
 
+// --- FUNGSI CREATE PRODUCT (YANG DIPERBAIKI) ---
 export const createProduct = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -120,15 +121,15 @@ export const createProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error createProduct:", error);
-    return res
-      .status(500)
-      .json({ status: "error", message: "Gagal menambahkan produk" });
+    // PERBAIKAN: Tampilkan pesan error asli agar terbaca di log Flutter
+    return res.status(500).json({ 
+        status: "error", 
+        message: `Gagal menambahkan produk: ${error.message}` 
+    });
   }
 };
 
 export const updateProduct = async (req, res) => {
-    // Fungsi ini kembali ke versi sederhana, tanpa logika logging
-    // karena logging sudah ditangani di productSizeRepository
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty())
@@ -180,7 +181,6 @@ export const updateProduct = async (req, res) => {
           .json({ status: "error", message: "Nama produk sudah digunakan" });
     }
     
-    // Perhatikan: userId TIDAK perlu dilewatkan lagi ke updateProduct
     const updated = await productRepository.updateProduct(id, {
       nama,
       deskripsi,
@@ -239,8 +239,6 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
-// --- Fungsi tambahan untuk manajemen stok dan ukuran ---
-
 export const getLowStockProducts = async (req, res) => {
   try {
     const products = await productRepository.getLowStockProducts();
@@ -258,9 +256,6 @@ export const getLowStockProducts = async (req, res) => {
   }
 };
 
-// =================================================================
-// --- MULAI PERUBAHAN DI SINI ---
-// =================================================================
 export const addProductSize = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -269,7 +264,7 @@ export const addProductSize = async (req, res) => {
 
     const { id } = req.params;
     const { sizeId, quantity } = req.body;
-    const userId = req.user.id; // Ambil ID user
+    const userId = req.user.id; 
 
     const product = await productRepository.getProductById(id);
     if (!product)
@@ -285,7 +280,7 @@ export const addProductSize = async (req, res) => {
         sizeId,
         quantity: parseInt(quantity) || 0,
       },
-      userId // Lewatkan userId ke repository
+      userId 
     );
 
     return res.status(201).json({
@@ -307,7 +302,7 @@ export const updateProductSize = async (req, res) => {
 
     const { id, sizeId } = req.params;
     const { quantity } = req.body;
-    const userId = req.user.id; // Ambil ID user
+    const userId = req.user.id; 
 
     const productSize = await productSizeRepository.getProductSizeStock(id, sizeId);
     if (!productSize)
@@ -318,7 +313,7 @@ export const updateProductSize = async (req, res) => {
       {
         quantity: parseInt(quantity) || 0,
       },
-      userId // Lewatkan userId ke repository
+      userId 
     );
 
     return res.status(200).json({
@@ -335,7 +330,7 @@ export const updateProductSize = async (req, res) => {
 export const deleteProductSize = async (req, res) => {
   try {
     const { id, sizeId } = req.params;
-    const userId = req.user.id; // Ambil ID user
+    const userId = req.user.id; 
 
     const productSize = await productSizeRepository.getProductSizeStock(id, sizeId);
     if (!productSize)
@@ -343,7 +338,7 @@ export const deleteProductSize = async (req, res) => {
 
     await productSizeRepository.deleteProductSize(
         productSize.id, 
-        userId // Lewatkan userId ke repository
+        userId 
     );
 
     return res.status(200).json({

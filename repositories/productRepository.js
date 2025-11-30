@@ -1,8 +1,6 @@
 // repositories/productRepository.js
-import { PrismaClient } from "@prisma/client";
+import prisma from "../config/prisma.js"; // <--- PENTING: Gunakan import ini, JANGAN new PrismaClient()
 import { updateProductTotalStock } from "./productSizeRepository.js";
-
-const prisma = new PrismaClient();
 
 // Fungsi untuk memeriksa apakah nama produk sudah ada
 export const isProductNameExists = async (nama, excludeId = null) => {
@@ -139,7 +137,7 @@ export const createProduct = async (data) => {
   });
 };
 
-// Fungsi untuk mengupdate produk (KEMBALI KE VERSI ASLI)
+// Fungsi untuk mengupdate produk
 export const updateProduct = async (id, data) => {
   const { sizes, ...productData } = data;
 
@@ -151,7 +149,7 @@ export const updateProduct = async (id, data) => {
     });
 
     // Jika sizes disediakan, update stok ukuran
-    if (sizes) { // Cek 'sizes' tidak undefined
+    if (sizes) { 
       await tx.productSize.deleteMany({
         where: { productId: id },
       });
@@ -223,8 +221,7 @@ export const getLowStockProducts = async () => {
   });
 };
 
-// Fungsi untuk mengupdate stok produk langsung (tanpa melalui ProductSize)
-// Fungsi ini sebaiknya hanya digunakan untuk keperluan admin/perbaikan data
+// Fungsi untuk mengupdate stok produk langsung
 export const updateProductStock = async (id, stock) => {
   return prisma.product.update({
     where: { id },
