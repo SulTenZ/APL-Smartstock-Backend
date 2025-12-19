@@ -26,7 +26,15 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// --- KONFIGURASI CORS (SUDAH DIPERBARUI) ---
+app.use(cors({
+  origin: [
+    "http://localhost:5173",                     // Frontend Localhost
+    "https://apl-shoes-secondbrand.vercel.app"   // Frontend Production (Vercel)
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // Daftarkan semua routes
